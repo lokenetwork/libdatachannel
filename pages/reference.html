@@ -108,6 +108,7 @@
 <span class="w">    </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">enableIceTcp</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">enableIceUdpMux</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">disableAutoNegotiation</span><span class="p">;</span><span class="w"></span>
+<span class="w">    </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">forceMediaTransport</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="n">uint16_t</span><span class="w"> </span><span class="n">portRangeBegin</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="n">uint16_t</span><span class="w"> </span><span class="n">portRangeEnd</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">mtu</span><span class="p">;</span><span class="w"></span>
@@ -128,6 +129,7 @@
 <li><code>enableIceTcp</code>: if true, generate TCP candidates for ICE (ignored with libjuice as ICE backend)</li>
 <li><code>enableIceUdpMux</code>: if true, connections are multiplexed on the same UDP port (should be combined with <code>portRangeBegin</code> and <code>portRangeEnd</code>, ignored with libnice as ICE backend)</li>
 <li><code>disableAutoNegotiation</code>: if true, the user is responsible for calling <code>rtcSetLocalDescription</code> after creating a Data Channel and after setting the remote description</li>
+<li><code>forceMediaTransport</code>: if true, the connection allocates the SRTP media transport even if no tracks are present (necessary to add tracks during later renegotiation)</li>
 <li><code>portRangeBegin</code> (optional): first port (included) of the allowed local port range (0 if unused)</li>
 <li><code>portRangeEnd</code> (optional): last port (included) of the allowed local port (0 if unused)</li>
 <li><code>mtu</code> (optional): manually set the Maximum Transfer Unit (MTU) for the connection (0 if automatic)</li>
@@ -138,17 +140,27 @@
 <p>Each entry in <code>iceServers</code> must match the format <code>[("stun"|"turn"|"turns") (":"|"://")][username ":" password "@"]hostname[":" port]["?transport=" ("udp"|"tcp"|"tls")]</code>. The default scheme is STUN, the default port is 3478 (5349 over TLS), and the default transport is UDP. For instance, a STUN server URI could be <code>mystunserver.org</code>, and a TURN server URI could be <code>turn:myuser:12345678@turnserver.org</code>. Note transports TCP and TLS are only available for a TURN server with libnice as ICE backend and govern only the TURN control connection, meaning relaying is always performed over UDP.</p>
 <p>The <code>proxyServer</code> URI, if present, must match the format <code>[("http"|"socks5") (":"|"://")][username ":" password "@"]hostname["    :" port]</code>. The default scheme is HTTP, and the default port is 3128 for HTTP or 1080 for SOCKS5.</p>
 <p>If the username or password of an URI contains reserved special characters, they must be percent-encoded. In particular, ":" must be encoded as "%3A" and "@" must by encoded as "%40".</p>
-<h4>rtcDeletePeerConnection</h4>
-<div class="highlight"><pre><span></span><code>int rtcDeletePeerConnection(int pc)
+<h4>rtcClosePeerConnection</h4>
+<div class="highlight"><pre><span></span><code>int rtcClosePeerConnection(int pc)
 </code></pre></div>
 
-<p>Deletes the specified Peer Connection.</p>
+<p>Closes the Peer Connection.</p>
 <p>Arguments:</p>
 <ul>
 <li><code>pc</code>: the Peer Connection identifier</li>
 </ul>
 <p>Return value: <code>RTC_ERR_SUCCESS</code> or a negative error code</p>
-<p>After this function has been called, <code>pc</code> must not be used in a function call anymore. This function will block until all scheduled callbacks of <code>pc</code> return (except the one this function might be called in) and no other callback will be called for <code>pc</code> after it returns.</p>
+<h4>rtcDeletePeerConnection</h4>
+<div class="highlight"><pre><span></span><code>int rtcDeletePeerConnection(int pc)
+</code></pre></div>
+
+<p>Deletes the Peer Connection.</p>
+<p>Arguments:</p>
+<ul>
+<li><code>pc</code>: the Peer Connection identifier</li>
+</ul>
+<p>Return value: <code>RTC_ERR_SUCCESS</code> or a negative error code</p>
+<p>If it is not already closed, the Peer Connection is implicitly closed before being deleted. After this function has been called, <code>pc</code> must not be used in a function call anymore. This function will block until all scheduled callbacks of <code>pc</code> return (except the one this function might be called in) and no other callback will be called for <code>pc</code> after it returns.</p>
 <h4>rtcSetXCallback</h4>
 <p>These functions set, change, or unset (if <code>cb</code> is <code>NULL</code>) the different callbacks of a Peer Connection.</p>
 <div class="highlight"><pre><span></span><code>int rtcSetLocalDescriptionCallback(int pc, rtcDescriptionCallbackFunc cb)*
@@ -373,6 +385,17 @@
 </ul>
 <p>Return value: <code>RTC_ERR_SUCCESS</code> or a negative error code</p>
 <p>WebSocket: Like with the JavaScript API, the state will first change to closing, then closed only after the connection has been actually closed.</p>
+<h4>rtcDelete</h4>
+<div class="highlight"><pre><span></span><code>int rtcDelete(int id)
+</code></pre></div>
+
+<p>Deletes the channel.</p>
+<p>Arguments:</p>
+<ul>
+<li><code>id</code>: the channel identifier</li>
+</ul>
+<p>Return value: <code>RTC_ERR_SUCCESS</code> or a negative error code</p>
+<p>If it is not already closed, the channel is implicitly closed before being deleted. After this function has been called, <code>id</code> must not be used in a function call anymore. This function will block until all scheduled callbacks of <code>id</code> return (except the one this function might be called in) and no other callback will be called for <code>id</code> after it returns.</p>
 <h4>rtcIsOpen</h4>
 <div class="highlight"><pre><span></span><code>bool rtcIsOpen(int id)
 </code></pre></div>
@@ -477,7 +500,7 @@
 </ul>
 <p><code>rtcDataChannel()</code> is equivalent to <code>rtcDataChannelEx()</code> with settings set to ordered, reliable, non-negotiated, with automatic stream ID selection (all flags set to <code>false</code>), and <code>protocol</code> set to an empty string.</p>
 <p>Return value: the identifier of the new Data Channel or a negative error code.</p>
-<p>The Data Channel must be deleted with <code>rtcDeleteDataChannel</code>.</p>
+<p>The Data Channel must be deleted with <code>rtcDeleteDataChannel</code> (or <code>rtcDelete</code>).</p>
 <p>If <code>disableAutoNegotiation</code> was not set in <code>rtcConfiguration</code>, the library will automatically initiate the negotiation by calling <code>rtcSetLocalDescription</code> internally. Otherwise, the user must call <code>rtcSetLocalDescription</code> to initiate the negotiation after creating the first Data Channel.</p>
 <h4>rtcDeleteDataChannel</h4>
 <div class="highlight"><pre><span></span><code>int rtcDeleteDataChannel(int dc)
@@ -548,7 +571,7 @@
 <li><code>mediaDescriptionSdp</code>: a null-terminated string specifying the corresponding media SDP. It must start with a m-line and include a mid parameter.</li>
 </ul>
 <p>Return value: the identifier of the new Track or a negative error code</p>
-<p>The new track must be deleted with <code>rtcDeleteTrack</code>.</p>
+<p>The new track must be deleted with <code>rtcDeleteTrack</code> (or <code>rtcDelete</code>).</p>
 <p>The user must call <code>rtcSetLocalDescription</code> to negotiate the track.</p>
 <h4>rtcDeleteTrack</h4>
 <div class="highlight"><pre><span></span><code>int rtcDeleteTrack(int tr)
@@ -608,6 +631,8 @@
 <span class="w">    </span><span class="nb nb-Type">bool</span><span class="w"> </span><span class="n">disableTlsVerification</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="nb">char</span><span class="w"> </span><span class="o">**</span><span class="n">protocols</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">protocolsCount</span><span class="p">;</span><span class="w"></span>
+<span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">pingInterval</span><span class="p">;</span><span class="w"></span>
+<span class="w">    </span><span class="nb nb-Type">int</span><span class="w"> </span><span class="n">maxOutstandingPings</span><span class="p">;</span><span class="w"></span>
 <span class="p">}</span><span class="w"> </span><span class="n">rtcWsConfiguration</span><span class="p">;</span><span class="w"></span>
 </code></pre></div>
 
@@ -619,9 +644,11 @@
 <li><code>disableTlsVerification</code>: if true, don't verify the TLS certificate, else try to verify it if possible</li>
 <li><code>protocols</code> (optional): an array of pointers on null-terminated protocol names (NULL if unused)</li>
 <li><code>protocolsCount</code> (optional): number of URLs in the array pointed by <code>protocols</code> (0 if unused)</li>
+<li><code>pingInterval</code> (optional): ping interval in milliseconds (0 if default, &lt; 0 if disabled)</li>
+<li><code>maxOutstandingPings</code> (optional): number of unanswered pings before declaring failure (0 if default, &lt; 0 if disabled)</li>
 </ul>
 <p>Return value: the identifier of the new WebSocket or a negative error code</p>
-<p>The new WebSocket must be deleted with <code>rtcDeleteWebSocket</code>. The scheme of the URL must be either <code>ws</code> or <code>wss</code>.</p>
+<p>The new WebSocket must be deleted with <code>rtcDeleteWebSocket</code> (or <code>rtcDelete</code>). The scheme of the URL must be either <code>ws</code> or <code>wss</code>.</p>
 <h4>rtcDeleteWebSocket</h4>
 <div class="highlight"><pre><span></span><code>int rtcDeleteWebSocket(int ws)
 </code></pre></div>
