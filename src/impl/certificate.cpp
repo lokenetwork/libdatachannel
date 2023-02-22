@@ -149,7 +149,198 @@ string make_fingerprint(gnutls_x509_crt_t crt) {
 	return oss.str();
 }
 
-#else // USE_GNUTLS==0
+#elif USE_MBEDTLS
+
+#include "mbedtls/ecdsa.h"
+#include "mbedtls/rsa.h"
+
+Certificate Certificate::FromString(string crt_pem, string key_pem) {
+	PLOG_DEBUG << "Importing certificate from PEM string (MbedTLS)";
+
+	// TODO
+}
+
+Certificate Certificate::FromFile(const string &crt_pem_file, const string &key_pem_file,
+                                  const string &pass) {
+	PLOG_DEBUG << "Importing certificate from PEM file (MbedTLS): " << crt_pem_file;
+
+	shared_ptr<mbedtls_x509_crt> crt(
+	    []() {
+		    auto *p = new mbedtls_x509_crt;
+		    mbedtls_x509_crt_init(p);
+	    },
+	    []() {
+		    mbedtls_x509_crt_free(p);
+		    delete p;
+	    });
+
+	shared_ptr<mbedtls_pk_context> pk(
+	    []() {
+		    auto *p = new mbedtls_pk_context;
+		    mbedtls_pk_context_init(p);
+	    },
+	    []() {
+		    mbedtls_pk_context_free(p);
+		    delete p;
+	    });
+
+	mbedtls::check(mbedtls_x509_crt_parse_file(crt.get(), crt_pem.c_str()));
+	mbedtls::check(mbedtls_pk_parse_keyfile(pk.get(), key_pem.c_str(), ""));
+
+	return Certificate(std::move(crt), std::move(pk));
+}
+
+Certificate Certificate::Generate(CertificateType type, const string &commonName) {
+	PLOG_DEBUG << "Generating certificate (MbedTLS)";
+
+	shared_ptr<mbedtls_x509_crt> crt(
+	    []() {
+		    auto *p = new mbedtls_x509_crt;
+		    mbedtls_x509_crt_init(p);
+	    },
+	    []() {
+		    mbedtls_x509_crt_free(p);
+		    delete p;
+	    });
+
+	shared_ptr<mbedtls_pk_context> pk(
+	    []() {
+		    auto *p = new mbedtls_pk_context;
+		    mbedtls_pk_context_init(p);
+	    },
+	    []() {
+		    mbedtls_pk_context_free(p);
+		    delete p;
+	    });
+
+	mbedtls_entropy_context entropy;
+	mbedtls_ctr_drbg_context drbg;
+	mbedtls_x509write_cert wcrt;
+
+	mbedtls_entropy_init(&entropy);
+	mbedtls_ctr_drbg_init(&drbg);
+	mbedtls_x509write_crt_init(&wcrt);
+
+	try {
+		mbedtls::check(mbedtls_ctr_drbg_seed(
+		    &drbg, mbedtls_entropy_func, &entropy,
+		    reinterpret_cast<const unsigned char *>(commonName.data()), commonName.size()));
+
+		switch (type) {
+		// RFC 8827 WebRTC Security Architecture 6.5. Communications Security
+		// All implementations MUST support DTLS 1.2 with the
+		// TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 cipher suite and the P-256 curve
+		// See https://www.rfc-editor.org/rfc/rfc8827.html#section-6.5
+		case CertificateType::Default:
+		case CertificateType::Ecdsa: {
+			mbedtls::check(mbedtls_pk_setup(pk.get(), mbedtls_pk_info_from_type(MBEDTLS_PK_ECDSA)));
+			mbedtls::check(mbedtls_ecdsa_genkey(mbedtls_pk_ecdsa(pk.get()), MBEDTLS_ECP_DP_SECP256R1,
+			                                    mbedtls_ctr_drbg_random, &drbg),
+			               "Unable to generate ECDSA P-256 key pair");
+			break;
+		}
+		case CertificateType::Rsa: {
+			const unsigned int nbits = 2048;
+			const int exponent = 65537;
+			mbedtls::check(mbedtls_pk_setup(pk.get(), mbedtls_pk_info_from_type(MBEDTLS_PK_RSA)));
+			mbedtls::check(mbedtls_rsa_gen_key(mbedtls_pk_rsa(pk.get()), mbedtls_ctr_drbg_random, &drbg,
+			                                   nbits, exponent),
+			               "Unable to generate RSA key pair");
+			break;
+		}
+		default:
+			throw std::invalid_argument("Unknown certificate type");
+		}
+
+		mbedtls_x509write_crt_set_subject_key(&wcrt, pk.get());
+		mbedtls_x509write_crt_set_issuer_key(&wcrt, pk.get());
+
+		mbedtls::check(mbedtls_x509write_crt_set_subject_name(&wcrt, commonName.c_str()));
+		mbedtls::check(mbedtls_x509write_crt_set_issuer_name(&wcrt, commonName.c_str()));
+
+		mbedtls_x509write_crt_set_version(&wcrt, 1);
+		mbedtls_x509write_crt_set_md_alg(&wcrt, TODO);
+
+		// TODO: dn
+
+		const size_t serialSize = 16;
+		unsigned char serial[serialSize];
+		mbedtls::check(mbedtls_ctr_drbg_random(&drbg, serial, serialSize));
+		mbedtls::check(mbedtls_x509write_crt_set_serial_raw(&wcrt, serial, serialSize));
+
+		using namespace std::chrono;
+		auto now = time_point_cast<seconds>(system_clock::now());
+		string notBefore = mbedtls::format_time(now - hours(1));
+		string notAfter = mbedtls::format_time(now + hours(24 * 365));
+		mbedtls::check(
+		    mbedtls_x509write_crt_set_validity(&wcrt, notBefore.c_str(), notAfter.c_str()));
+
+		// TODO: wcrt to crt
+
+	} catch (...) {
+		mbedtls_entropy_free(&entropy);
+		mbedtls_ctr_drbg_free(&drbg);
+		throw;
+	}
+
+	// TODO
+
+	return Certificate(std::move(crt), std::move(pk));
+}
+
+// TODO
+Certificate::Certificate(gnutls_x509_crt_t crt, gnutls_x509_privkey_t privkey)
+    : mCredentials(gnutls::new_credentials(), gnutls::free_credentials),
+      mFingerprint(make_fingerprint(crt)) {
+
+	gnutls::check(gnutls_certificate_set_x509_key(*mCredentials, &crt, 1, privkey),
+	              "Unable to set certificate and key pair in credentials");
+}
+
+Certificate::Certificate(shared_ptr<gnutls_certificate_credentials_t> creds)
+    : mCredentials(std::move(creds)), mFingerprint(make_fingerprint(*mCredentials)) {}
+
+gnutls_certificate_credentials_t Certificate::credentials() const { return *mCredentials; }
+
+string Certificate::fingerprint() const { return mFingerprint; }
+
+string make_fingerprint(gnutls_certificate_credentials_t credentials) {
+	auto new_crt_list = [credentials]() -> gnutls_x509_crt_t * {
+		gnutls_x509_crt_t *crt_list = nullptr;
+		unsigned int crt_list_size = 0;
+		gnutls::check(gnutls_certificate_get_x509_crt(credentials, 0, &crt_list, &crt_list_size));
+		assert(crt_list_size == 1);
+		return crt_list;
+	};
+
+	auto free_crt_list = [](gnutls_x509_crt_t *crt_list) {
+		gnutls_x509_crt_deinit(crt_list[0]);
+		gnutls_free(crt_list);
+	};
+
+	unique_ptr<gnutls_x509_crt_t, decltype(free_crt_list)> crt_list(new_crt_list(), free_crt_list);
+
+	return make_fingerprint(*crt_list);
+}
+
+string make_fingerprint(gnutls_x509_crt_t crt) {
+	const size_t size = 32;
+	unsigned char buffer[size];
+	size_t len = size;
+	gnutls::check(gnutls_x509_crt_get_fingerprint(crt, GNUTLS_DIG_SHA256, buffer, &len),
+	              "X509 fingerprint error");
+
+	std::ostringstream oss;
+	oss << std::hex << std::uppercase << std::setfill('0');
+	for (size_t i = 0; i < len; ++i) {
+		if (i)
+			oss << std::setw(1) << ':';
+		oss << std::setw(2) << unsigned(buffer[i]);
+	}
+	return oss.str();
+}
+
+#else // OPENSSL
 
 namespace {
 

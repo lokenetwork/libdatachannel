@@ -70,7 +70,17 @@ protected:
 	static ssize_t WriteCallback(gnutls_transport_ptr_t ptr, const void *data, size_t len);
 	static ssize_t ReadCallback(gnutls_transport_ptr_t ptr, void *data, size_t maxlen);
 	static int TimeoutCallback(gnutls_transport_ptr_t ptr, unsigned int ms);
-#else
+
+#elif USE_MBEDTLS
+	mbedtls_entropy_context mEntropy;
+	mbedtls_ctr_drbg_context mDrbg;
+	mbedtls_ssl_config mConf;
+	mbedtls_ssl_context mSsl;
+
+	static int WriteCallback(void *ctx, const unsigned char *buf, size_t len);
+	static int ReadCallback(void *ctx, unsigned char *buf, size_t len);
+
+#else // OPENSSL
 	SSL_CTX *mCtx = NULL;
 	SSL *mSsl = NULL;
 	BIO *mInBio, *mOutBio;
